@@ -1,57 +1,35 @@
 (ns todo-clj.core
-  (:require [compojure.core :refer [defroutes context GET]]
-            [compojure.route :as route]
+  (:require [compojure.core :refer [routes]]
             [ring.adapter.jetty :as server]
-            [ring.util.response :as res]))
+            [todo-clj.handler.main :refer [main-routes]]
+            [todo-clj.handler.todo :refer [todo-routes]]
+            [todo-clj.middleware :refer [wrap-dev]]
+            [environ.core :refer [env]]))
 
-; api
-(defn html [res]
-  (res/content-typ res "text/html; charset=utf-8"))
+(defn- wrap [handler middleware opt]
+  (if (true? opt)
+    (middleware handler)
+    (if opt
+      (middleware handler opt)
+      (handler))))
 
-(defn home-view [req]
-  "<h1>ホーム画面</h1>
-   <a href=\"/todo\">TODO 一覧</a>")
+(def app
+  (-> (routes
+       todo-routes
+       main-routes)
+      (wrap wrap-dev (read-string (:dev env)))))
 
-(defn home [req]
-  (-> (home-view req)
-      res/response
-      html))
-
-(def todo-list
-  [{:title "朝ごはんを作る"}
-   {:title "エサをあげる"}
-   {:title "水を入れ替える"}
-   {:title "トイレを綺麗にする"}])
-
-(defn todo-index-view [req]
-  `("<h1>TODO 一覧</h1>"
-    "<ul>"
-    ~@(for [{:keys [title]} todo-list]
-        (str "<li>" title "</li>"))
-    "</ul>"))
-
-(defn todo-index [req]
-  (-> (todo-index-view req)
-      res/response
-      html))
-
-(defroutes handler
-  (GET "/" req home)
-  (GET "/todo" req todo-index)
-  (route/not-found "<h1>404 page not found</h1>"))
-
-
-; server
 (defonce server (atom nil))
 
 (defn start-server []
-  (swap! server #(when-not % (server/run-jetty #'handler {:port 3000 :join? false}))))
+  (swap! server #(when-not % (server/run-jetty #'app {:port 3000 :join? false}))))
 
 (defn stop-server []
   (swap! server
-         (fn [s] (when @server
-                   (.stop @server)
-                   (reset! server nil)))))
+         (fn [s]
+           (when s
+             (.stop s)
+             nil))))
 
 (defn restart-server []
   (stop-server)
